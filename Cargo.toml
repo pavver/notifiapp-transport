@@ -1,0 +1,56 @@
+[package]
+name = "notifiapp-transport"
+version = "0.1.0"
+edition = "2024"
+description = "Shared transport layer for notifiapp services: WS+postcard (primary) and HTTP+JSON+SSE (optional fallback)"
+license = "MIT"
+repository = "https://github.com/pavvers1/notifiapp-transport"
+
+# ---------------------------------------------------------------------------
+# Feature flags
+# ---------------------------------------------------------------------------
+[features]
+default = ["ws", "crypto"]
+# WebSocket transport (primary, always recommended)
+ws = ["dep:tokio-tungstenite", "dep:futures-util"]
+# Noise XX encryption for WS (mandatory by default, can be disabled in pure-TLS setups)
+crypto = ["dep:snow"]
+# HTTP+JSON+SSE transport (optional debug/fallback)
+http = ["dep:reqwest", "dep:serde_json", "dep:axum", "dep:tower-http", "dep:tokio-stream"]
+
+# ---------------------------------------------------------------------------
+# Dependencies
+# ---------------------------------------------------------------------------
+[dependencies]
+# Async runtime
+tokio = { version = "1", features = ["sync", "macros", "time", "rt", "io-util"] }
+tokio-util = { version = "0.7", features = ["io"] }
+
+# Serialization
+serde = { version = "1", features = ["derive"] }
+postcard = { version = "1", features = ["use-std"] }
+bytes = "1"
+
+# Utilities
+uuid = { version = "1", features = ["v4", "serde"] }
+dashmap = "6"
+parking_lot = "0.12"
+thiserror = "2"
+anyhow = "1"
+tracing = "0.1"
+async-trait = "0.1"
+url = "2"
+
+# WS transport (feature = "ws")
+tokio-tungstenite = { version = "0.30", features = ["rustls-tls-native-roots"], optional = true }
+futures-util = { version = "0.3", optional = true }
+
+# Noise crypto (feature = "crypto")
+snow = { version = "0.10", optional = true }
+
+# HTTP+SSE transport (feature = "http")
+reqwest = { version = "0.12", features = ["json", "stream"], optional = true }
+serde_json = { version = "1", optional = true }
+axum = { version = "0.8", features = ["json", "ws"], optional = true }
+tower-http = { version = "0.6", features = ["cors"], optional = true }
+tokio-stream = { version = "0.1", features = ["sync"], optional = true }
