@@ -1,5 +1,7 @@
 use serde::{Deserialize, Serialize};
 
+use std::time::Duration;
+
 /// Lifecycle state of a transport connection.
 /// Mirrors the states in notifiapp-protocol but is protocol-agnostic.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -8,6 +10,13 @@ pub enum ConnectionState {
     Disconnected,
     /// Resolving DNS / opening TCP / TLS.
     Connecting,
+    /// Automatically attempting to restore a previously active connection.
+    Reconnecting {
+        /// Number of failed reconnect attempts in the current sequence.
+        attempt: u32,
+        /// How long to wait before the next connection attempt.
+        delay: Duration,
+    },
     /// WS connection open; exchanging protocol version string.
     Handshaking,
     /// Performing Noise XX key exchange.
@@ -35,7 +44,11 @@ impl ConnectionState {
     pub fn is_connecting(&self) -> bool {
         matches!(
             self,
-            Self::Connecting | Self::Handshaking | Self::Authenticating | Self::WaitingForAuth
+            Self::Connecting
+                | Self::Reconnecting { .. }
+                | Self::Handshaking
+                | Self::Authenticating
+                | Self::WaitingForAuth
         )
     }
 

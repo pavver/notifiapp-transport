@@ -81,7 +81,6 @@
 //! ```
 
 pub mod auth;
-pub mod endpoint;
 pub mod error;
 pub mod frame;
 pub mod scheduler;
@@ -101,7 +100,6 @@ pub mod http;
 // ---------------------------------------------------------------------------
 
 pub use auth::{AuthHandler, AuthOutcome, NoAuth};
-pub use endpoint::{EndpointHandle, EndpointPriority, EndpointRegistry};
 pub use error::TransportError;
 pub use frame::{Frame, FrameKind};
 pub use scheduler::MessagePriority;

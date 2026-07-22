@@ -107,3 +107,74 @@ impl<T> Default for WfqScheduler<T> {
         Self::new()
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_wfq_scheduler_empty() {
+        let mut scheduler: WfqScheduler<i32> = WfqScheduler::new();
+        assert!(scheduler.is_empty());
+        assert_eq!(scheduler.len(), 0);
+        assert_eq!(scheduler.next(), None);
+    }
+
+    #[test]
+    fn test_wfq_scheduler_fifo_same_priority() {
+        let mut scheduler = WfqScheduler::new();
+        scheduler.enqueue("msg1", MessagePriority::Normal);
+        scheduler.enqueue("msg2", MessagePriority::Normal);
+
+        assert_eq!(scheduler.len(), 2);
+        assert_eq!(scheduler.next(), Some("msg1"));
+        assert_eq!(scheduler.next(), Some("msg2"));
+        assert_eq!(scheduler.next(), None);
+    }
+
+    #[test]
+    fn test_wfq_scheduler_weights_distribution() {
+        let mut scheduler = WfqScheduler::new();
+
+        // Enqueue plenty of items in each queue to verify weights
+        for i in 0..20 {
+            scheduler.enqueue(format!("RT-{}", i), MessagePriority::RealTime);
+            scheduler.enqueue(format!("N-{}", i), MessagePriority::Normal);
+            scheduler.enqueue(format!("S-{}", i), MessagePriority::Stream);
+            scheduler.enqueue(format!("B-{}", i), MessagePriority::Bulk);
+        }
+
+        // In one full round, we expect to pop:
+        // 8 RealTime, 4 Normal, 2 Stream, 1 Bulk
+        let mut popped = Vec::new();
+        for _ in 0..15 {
+            if let Some(item) = scheduler.next() {
+                popped.push(item);
+            }
+        }
+
+        let rt_count = popped.iter().filter(|x| x.starts_with("RT-")).count();
+        let n_count = popped.iter().filter(|x| x.starts_with("N-")).count();
+        let s_count = popped.iter().filter(|x| x.starts_with("S-")).count();
+        let b_count = popped.iter().filter(|x| x.starts_with("B-")).count();
+
+        assert_eq!(rt_count, 8);
+        assert_eq!(n_count, 4);
+        assert_eq!(s_count, 2);
+        assert_eq!(b_count, 1);
+    }
+
+    #[test]
+    fn test_wfq_scheduler_no_starvation() {
+        let mut scheduler = WfqScheduler::new();
+
+        // Only Stream and Bulk queues have items
+        scheduler.enqueue("stream1", MessagePriority::Stream);
+        scheduler.enqueue("bulk1", MessagePriority::Bulk);
+
+        // Since RealTime and Normal are empty, credits for Stream and Bulk are consumed.
+        assert_eq!(scheduler.next(), Some("stream1"));
+        assert_eq!(scheduler.next(), Some("bulk1"));
+        assert_eq!(scheduler.next(), None);
+    }
+}

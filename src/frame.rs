@@ -117,3 +117,92 @@ impl FrameAccumulator {
         Ok(None)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn test_frame_encode_decode_round_trip() {
+        let frame = Frame {
+            id: 42,
+            kind: FrameKind::Message,
+            data: b"hello world".to_vec(),
+        };
+
+        let encoded = encode_frame(&frame).unwrap();
+        // The first 4 bytes are the length of the payload
+        let len_bytes: [u8; 4] = encoded[0..4].try_into().unwrap();
+        let payload_len = u32::from_le_bytes(len_bytes) as usize;
+        assert_eq!(payload_len, encoded.len() - 4);
+
+        // Decode from raw bytes (excluding the 4-byte length prefix as FrameAccumulator does)
+        let decoded = decode_frame(&encoded[4..]).unwrap();
+        assert_eq!(decoded.id, frame.id);
+        assert_eq!(decoded.kind, frame.kind);
+        assert_eq!(decoded.data, frame.data);
+    }
+
+    #[test]
+    fn test_frame_accumulator_single_chunk() {
+        let frame = Frame {
+            id: 1,
+            kind: FrameKind::Event,
+            data: vec![0xAA; 100],
+        };
+        let encoded = encode_frame(&frame).unwrap();
+
+        let mut accumulator = FrameAccumulator::new();
+        let res = accumulator.feed(&encoded, 1024).unwrap();
+        assert!(res.is_some());
+        let decoded = decode_frame(&res.unwrap()).unwrap();
+        assert_eq!(decoded.id, 1);
+        assert_eq!(decoded.data.len(), 100);
+    }
+
+    #[test]
+    fn test_frame_accumulator_multiple_chunks() {
+        let frame = Frame {
+            id: 2,
+            kind: FrameKind::Message,
+            data: vec![0xBB; 200],
+        };
+        let encoded = encode_frame(&frame).unwrap();
+
+        let mut accumulator = FrameAccumulator::new();
+
+        // Split the encoded buffer into 3 chunks
+        let chunk1 = &encoded[..50];
+        let chunk2 = &encoded[50..150];
+        let chunk3 = &encoded[150..];
+
+        assert_eq!(accumulator.feed(chunk1, 1024).unwrap(), None);
+        assert_eq!(accumulator.feed(chunk2, 1024).unwrap(), None);
+
+        let final_res = accumulator.feed(chunk3, 1024).unwrap();
+        assert!(final_res.is_some());
+        let decoded = decode_frame(&final_res.unwrap()).unwrap();
+        assert_eq!(decoded.id, 2);
+        assert_eq!(decoded.data.len(), 200);
+    }
+
+    #[test]
+    fn test_frame_accumulator_payload_too_large() {
+        let mut accumulator = FrameAccumulator::new();
+
+        // Declare a length of 5000 bytes (longer than max_bytes = 1000)
+        let mut invalid_chunk = vec![0u8; 10];
+        let bad_len = 5000u32;
+        invalid_chunk[0..4].copy_from_slice(&bad_len.to_le_bytes());
+
+        let res = accumulator.feed(&invalid_chunk, 1000);
+        assert!(res.is_err());
+    }
+
+    #[test]
+    fn test_frame_accumulator_too_short() {
+        let mut accumulator = FrameAccumulator::new();
+        let res = accumulator.feed(&[0, 1], 1000);
+        assert!(res.is_err());
+    }
+}
