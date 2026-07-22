@@ -193,20 +193,17 @@ async fn test_ws_reconnect_backoff_states() {
             let ws_stream = accept_async(stream).await.unwrap();
             let server_cfg = server_config.clone();
             tokio::spawn(async move {
-                match accept_ws_session(ws_stream, server_cfg).await {
-                    Ok((handle, mut inbox, task)) => {
-                        let _task_handle = tokio::spawn(task);
+                if let Ok((handle, mut inbox, task)) = accept_ws_session(ws_stream, server_cfg).await {
+                    let _task_handle = tokio::spawn(task);
 
-                        // Read the auth frame
-                        if let Some(frame) = inbox.recv().await {
-                            handle.respond(frame.id, b"OK".to_vec()).unwrap();
-                        }
-
-                        // Close session shortly to trigger a client-side disconnect
-                        tokio::time::sleep(Duration::from_secs(1)).await;
-                        handle.close();
+                    // Read the auth frame
+                    if let Some(frame) = inbox.recv().await {
+                        handle.respond(frame.id, b"OK".to_vec()).unwrap();
                     }
-                    Err(_) => {}
+
+                    // Close session shortly to trigger a client-side disconnect
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    handle.close();
                 }
             });
         }
@@ -246,15 +243,11 @@ async fn test_ws_reconnect_backoff_states() {
             Ok(_) = state_rx.changed() => {
                 let state = state_rx.borrow().clone();
                 println!("Reconnection test: State changed: {:?}", state);
-                match state {
-                    ConnectionState::Reconnecting { attempt, delay } => {
-                        if attempt == 1 && delay == Duration::from_secs(2) {
-                            got_reconnecting = true;
-                            break;
-                        }
+                if let ConnectionState::Reconnecting { attempt, delay } = state
+                    && attempt == 1 && delay == Duration::from_secs(2) {
+                        got_reconnecting = true;
+                        break;
                     }
-                    _ => {}
-                }
             }
         }
     }

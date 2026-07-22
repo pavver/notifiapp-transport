@@ -22,7 +22,7 @@
 //! │  accept_ws_session (server)  SseEmitter + SseResponse        │
 //! │  Noise XX encryption         Plain HTTPS                     │
 //! │  WFQ scheduling              Simple request/response         │
-//! │  Endpoint failover           SSE subscriptions               │
+//! │  Connection retry            SSE subscriptions               │
 //! │  Heartbeat + reconnect       Auto-reconnect SSE              │
 //! └───────────────────────────────────────────────────────────────┘
 //! ```
@@ -40,15 +40,13 @@
 //! ```ignore
 //! use notifiapp_transport::{
 //!     ws::{WsClient, WsClientConfig},
-//!     endpoint::EndpointPriority,
 //!     scheduler::MessagePriority,
 //! };
 //!
 //! let config = WsClientConfig::new("MY_SERVICE", "1.0.0");
 //! let client = WsClient::new(config, None);
 //!
-//! client.add_endpoint("ws://192.168.1.10:8080", EndpointPriority::Local)?;
-//! client.add_endpoint("wss://my-server.example.com", EndpointPriority::Remote)?;
+//! client.set_endpoint("ws://192.168.1.10:8080")?;
 //!
 //! client.on_event(|data| {
 //!     // deserialise `data` with your protocol codec
