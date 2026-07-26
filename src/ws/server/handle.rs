@@ -19,7 +19,7 @@ pub enum SessionCmd {
 #[derive(Clone)]
 pub struct ServerSessionHandle {
     pub id: Uuid,
-    pub(crate) cmd_tx: mpsc::UnboundedSender<SessionCmd>,
+    pub(crate) cmd_tx: std::sync::Arc<mpsc::UnboundedSender<SessionCmd>>,
     pub(crate) state_rx: watch::Receiver<ConnectionState>,
 }
 
@@ -72,5 +72,13 @@ impl ServerSessionHandle {
     /// Returns `true` if the underlying WS connection is still alive.
     pub fn is_alive(&self) -> bool {
         matches!(self.state(), ConnectionState::Online)
+    }
+}
+
+impl Drop for ServerSessionHandle {
+    fn drop(&mut self) {
+        if std::sync::Arc::strong_count(&self.cmd_tx) == 1 {
+            self.cmd_tx.send(SessionCmd::Close).ok();
+        }
     }
 }

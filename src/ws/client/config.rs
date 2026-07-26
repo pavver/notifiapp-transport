@@ -1,3 +1,5 @@
+use super::backoff::{BackoffStrategy, ExponentialBackoff};
+use std::sync::Arc;
 use std::time::Duration;
 
 // ---------------------------------------------------------------------------
@@ -35,6 +37,8 @@ pub struct WsClientConfig {
     /// Optional pinned server Noise public key (trust-on-first-use if `None`).
     #[cfg(feature = "crypto")]
     pub noise_server_key: Option<Vec<u8>>,
+    /// Strategy for calculating delays between reconnection attempts.
+    pub backoff: Arc<dyn BackoffStrategy>,
 }
 
 impl WsClientConfig {
@@ -49,6 +53,11 @@ impl WsClientConfig {
             max_payload_bytes: DEFAULT_MAX_PAYLOAD,
             #[cfg(feature = "crypto")]
             noise_server_key: None,
+            backoff: Arc::new(ExponentialBackoff::new(
+                Duration::from_secs(2),
+                2.0,
+                Duration::from_secs(30),
+            )),
         }
     }
 }

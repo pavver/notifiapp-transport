@@ -26,6 +26,9 @@ impl WsClient {
         let mut ever_connected = false;
 
         loop {
+            if self.cancel.is_cancelled() {
+                return;
+            }
             // Retrieve current endpoint
             let url = {
                 let u = self.url.read().clone();
@@ -34,10 +37,22 @@ impl WsClient {
                     None => {
                         // Sleep and wait for an EndpointChanged command
                         self.state_tx.send(ConnectionState::Disconnected).ok();
+                        let mut cancelled = false;
                         loop {
-                            if let Some(ClientCmd::EndpointChanged) = cmd_rx.recv().await {
-                                break;
+                            tokio::select! {
+                                _ = self.cancel.cancelled() => {
+                                    cancelled = true;
+                                    break;
+                                }
+                                Some(cmd) = cmd_rx.recv() => {
+                                    if let ClientCmd::EndpointChanged = cmd {
+                                        break;
+                                    }
+                                }
                             }
+                        }
+                        if cancelled {
+                            return;
                         }
                         continue;
                     }
@@ -45,24 +60,7 @@ impl WsClient {
             };
 
             // Calculate backoff
-            // 1-3 attempts: 2s
-            // 4-6 attempts: 5s
-            // 7-9 attempts: 10s
-            // 10-12 attempts: 20s
-            // 13+ attempts: 30s
-            let delay = if reconnect_attempt == 0 {
-                Duration::from_secs(0)
-            } else if reconnect_attempt <= 3 {
-                Duration::from_secs(2)
-            } else if reconnect_attempt <= 6 {
-                Duration::from_secs(5)
-            } else if reconnect_attempt <= 9 {
-                Duration::from_secs(10)
-            } else if reconnect_attempt <= 12 {
-                Duration::from_secs(20)
-            } else {
-                Duration::from_secs(30)
-            };
+            let delay = self.config.backoff.next_delay(reconnect_attempt);
 
             if delay > Duration::from_secs(0) {
                 if ever_connected {
@@ -78,6 +76,9 @@ impl WsClient {
 
                 // Sleep or wake up on commands
                 tokio::select! {
+                    _ = self.cancel.cancelled() => {
+                        return;
+                    }
                     _ = sleep(delay) => {}
                     Some(cmd) = cmd_rx.recv() => {
                         match cmd {
@@ -141,14 +142,23 @@ impl WsClient {
                     // Unauthorized is terminal. Stop trying and wait for wake.
                     self.state_tx.send(ConnectionState::Unauthorized).ok();
                     self.pending.retain(|_, _| false);
+                    let mut cancelled = false;
                     loop {
-                        if let Some(
-                            ClientCmd::WakeUp | ClientCmd::Reconnect | ClientCmd::EndpointChanged,
-                        ) = cmd_rx.recv().await
-                        {
-                            reconnect_attempt = 0;
-                            break;
+                        tokio::select! {
+                            _ = self.cancel.cancelled() => {
+                                cancelled = true;
+                                break;
+                            }
+                            Some(cmd) = cmd_rx.recv() => {
+                                if matches!(cmd, ClientCmd::WakeUp | ClientCmd::Reconnect | ClientCmd::EndpointChanged) {
+                                    reconnect_attempt = 0;
+                                    break;
+                                }
+                            }
                         }
+                    }
+                    if cancelled {
+                        return;
                     }
                     continue;
                 }
@@ -178,12 +188,22 @@ impl WsClient {
 
             if !self.auto_reconnect() {
                 // Wait indefinitely until user triggers reconnect
+                let mut cancelled = false;
                 loop {
-                    if let Some(ClientCmd::Reconnect | ClientCmd::EndpointChanged) =
-                        cmd_rx.recv().await
-                    {
-                        break;
+                    tokio::select! {
+                        _ = self.cancel.cancelled() => {
+                            cancelled = true;
+                            break;
+                        }
+                        Some(cmd) = cmd_rx.recv() => {
+                            if matches!(cmd, ClientCmd::Reconnect | ClientCmd::EndpointChanged) {
+                                break;
+                            }
+                        }
                     }
+                }
+                if cancelled {
+                    return;
                 }
             } else {
                 reconnect_attempt = 1; // Start reconnect sequence
@@ -219,12 +239,22 @@ impl WsClient {
                 self.state_tx.send(state.clone()).ok();
 
                 // Version mismatch is terminal until configuration/endpoint changes.
+                let mut cancelled = false;
                 loop {
-                    if let Some(ClientCmd::EndpointChanged | ClientCmd::Reconnect) =
-                        cmd_rx.recv().await
-                    {
-                        break;
+                    tokio::select! {
+                        _ = self.cancel.cancelled() => {
+                            cancelled = true;
+                            break;
+                        }
+                        Some(cmd) = cmd_rx.recv() => {
+                            if matches!(cmd, ClientCmd::EndpointChanged | ClientCmd::Reconnect) {
+                                break;
+                            }
+                        }
                     }
+                }
+                if cancelled {
+                    return Err(None);
                 }
                 Err(None)
             }
@@ -360,6 +390,9 @@ impl WsClient {
         loop {
             let hb = tokio::time::sleep_until(heartbeat_deadline);
             tokio::select! {
+                _ = self.cancel.cancelled() => {
+                    break;
+                }
                 msg = ws.next() => {
                     match msg {
                         Some(Ok(Message::Binary(data))) => {

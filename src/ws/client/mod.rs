@@ -1,3 +1,4 @@
+pub mod backoff;
 pub mod cmd;
 pub mod config;
 pub mod connection_loop;
@@ -42,6 +43,7 @@ pub struct WsClient {
     pub(crate) auto_reconnect: std::sync::atomic::AtomicBool,
     pub(crate) config: Arc<WsClientConfig>,
     pub(crate) auth: Arc<dyn AuthHandler>,
+    pub(crate) cancel: tokio_util::sync::CancellationToken,
 }
 
 impl WsClient {
@@ -57,6 +59,7 @@ impl WsClient {
     pub fn new(config: WsClientConfig, auth: Option<Arc<dyn AuthHandler>>) -> Arc<Self> {
         let (state_tx, state_rx) = watch::channel(ConnectionState::Disconnected);
         let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
+        let cancel = tokio_util::sync::CancellationToken::new();
 
         let client = Arc::new(Self {
             next_id: AtomicU32::new(2), // 0 = events, 1 = auth
@@ -69,6 +72,7 @@ impl WsClient {
             auto_reconnect: std::sync::atomic::AtomicBool::new(true),
             config: Arc::new(config),
             auth: auth.unwrap_or_else(|| Arc::new(NoAuth)),
+            cancel,
         });
 
         let bg = Arc::clone(&client);
@@ -116,6 +120,11 @@ impl WsClient {
     /// Instantly trigger a connection or reconnect attempt, resetting backoff timers.
     pub fn reconnect(&self) {
         self.cmd_tx.send(ClientCmd::Reconnect).ok();
+    }
+
+    /// Shutdown the client and terminate the background connection loop.
+    pub fn shutdown(&self) {
+        self.cancel.cancel();
     }
 
     // -----------------------------------------------------------------------

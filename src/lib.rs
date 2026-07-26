@@ -111,7 +111,10 @@ pub use crypto::NoiseSession;
 pub use error::CryptoError;
 
 #[cfg(feature = "ws")]
-pub use ws::{ServerSessionHandle, WsClient, WsClientConfig, WsServerConfig, accept_ws_session};
+pub use ws::{
+    BackoffStrategy, ConstantBackoff, ExponentialBackoff, LinearBackoff, ServerSessionHandle,
+    WsClient, WsClientConfig, WsServerConfig, accept_ws_session,
+};
 
 #[cfg(feature = "http")]
 pub use http::{HttpClient, HttpClientConfig, SseEmitter, SseResponse, SseSubscription, sse_pair};

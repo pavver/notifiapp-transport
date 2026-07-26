@@ -4,5 +4,6 @@
 pub mod client;
 pub mod server;
 
+pub use client::backoff::{BackoffStrategy, ConstantBackoff, ExponentialBackoff, LinearBackoff};
 pub use client::{WsClient, WsClientConfig};
 pub use server::{ServerSessionHandle, WsServerConfig, accept_ws_session};

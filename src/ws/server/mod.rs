@@ -123,7 +123,7 @@ where
 
     let handle = ServerSessionHandle {
         id: session_id,
-        cmd_tx,
+        cmd_tx: std::sync::Arc::new(cmd_tx),
         state_rx,
     };
 
