@@ -52,9 +52,9 @@ impl HttpClientConfig {
 /// This transport is intended as a **debug / fallback** alternative to the
 /// primary WS+postcard transport. It does not support Noise encryption.
 pub struct HttpClient {
-    client: Client,
-    base_url: Url,
-    config: Arc<HttpClientConfig>,
+    pub(crate) client: Client,
+    pub(crate) base_url: Url,
+    pub(crate) config: Arc<HttpClientConfig>,
 }
 
 impl HttpClient {
@@ -224,7 +224,7 @@ pub struct SseSubscription {
 // Internal SSE loop
 // ---------------------------------------------------------------------------
 
-async fn sse_loop(
+pub(crate) async fn sse_loop(
     client: Client,
     url: Url,
     handler: Arc<dyn Fn(String, String) + Send + Sync>,

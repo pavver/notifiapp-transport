@@ -1,6 +1,7 @@
 pub mod cmd;
 pub mod config;
 pub mod connection_loop;
+pub mod transport;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};

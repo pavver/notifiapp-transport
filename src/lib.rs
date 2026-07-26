@@ -83,6 +83,7 @@ pub mod error;
 pub mod frame;
 pub mod scheduler;
 pub mod state;
+pub mod transport;
 
 #[cfg(feature = "crypto")]
 pub mod crypto;
@@ -102,9 +103,12 @@ pub use error::TransportError;
 pub use frame::{Frame, FrameKind};
 pub use scheduler::MessagePriority;
 pub use state::ConnectionState;
+pub use transport::Transport;
 
 #[cfg(feature = "crypto")]
 pub use crypto::NoiseSession;
+#[cfg(feature = "crypto")]
+pub use error::CryptoError;
 
 #[cfg(feature = "ws")]
 pub use ws::{ServerSessionHandle, WsClient, WsClientConfig, WsServerConfig, accept_ws_session};

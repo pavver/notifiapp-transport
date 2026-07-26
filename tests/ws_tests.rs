@@ -193,7 +193,9 @@ async fn test_ws_reconnect_backoff_states() {
             let ws_stream = accept_async(stream).await.unwrap();
             let server_cfg = server_config.clone();
             tokio::spawn(async move {
-                if let Ok((handle, mut inbox, task)) = accept_ws_session(ws_stream, server_cfg).await {
+                if let Ok((handle, mut inbox, task)) =
+                    accept_ws_session(ws_stream, server_cfg).await
+                {
                     let _task_handle = tokio::spawn(task);
 
                     // Read the auth frame

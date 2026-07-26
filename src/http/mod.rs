@@ -3,6 +3,7 @@
 
 mod client;
 mod sse;
+pub mod transport;
 
 pub use client::{HttpClient, HttpClientConfig, SseSubscription};
 pub use sse::{SseEmitter, SseResponse, broadcast_sse_json, sse_pair};
