@@ -36,7 +36,6 @@ uuid = { version = "1.24.0", features = ["v4", "serde"] }
 dashmap = "6.2.1"
 parking_lot = "0.12.5"
 thiserror = "2.0.19"
-anyhow = "1.0.104"
 tracing = "0.1.44"
 async-trait = "0.1.91"
 url = "2.5.8"

@@ -55,6 +55,10 @@ pub struct HttpClient {
     pub(crate) client: Client,
     pub(crate) base_url: Url,
     pub(crate) config: Arc<HttpClientConfig>,
+    pub(crate) state_tx: tokio::sync::watch::Sender<crate::state::ConnectionState>,
+    pub(crate) state_rx: tokio::sync::watch::Receiver<crate::state::ConnectionState>,
+    pub(crate) cancel: CancellationToken,
+    pub(crate) tasks: std::sync::Mutex<tokio::task::JoinSet<()>>,
 }
 
 impl HttpClient {
@@ -81,10 +85,16 @@ impl HttpClient {
             .build()
             .map_err(|e| TransportError::ConnectionFailed(e.to_string()))?;
 
+        let (state_tx, state_rx) = tokio::sync::watch::channel(crate::state::ConnectionState::Online);
+
         Ok(Self {
             client,
             base_url,
             config: Arc::new(config),
+            state_tx,
+            state_rx,
+            cancel: CancellationToken::new(),
+            tasks: std::sync::Mutex::new(tokio::task::JoinSet::new()),
         })
     }
 
@@ -203,10 +213,16 @@ impl HttpClient {
         Ok(SseSubscription { _cancel: cancel })
     }
 
-    fn resolve(&self, path: &str) -> Result<Url, TransportError> {
+    pub(crate) fn resolve(&self, path: &str) -> Result<Url, TransportError> {
         self.base_url
             .join(path)
             .map_err(|_| TransportError::InvalidUrl(path.to_string()))
+    }
+}
+
+impl Drop for HttpClient {
+    fn drop(&mut self) {
+        self.cancel.cancel();
     }
 }
 
@@ -218,6 +234,12 @@ impl HttpClient {
 /// Dropping this value cancels the SSE stream.
 pub struct SseSubscription {
     _cancel: CancellationToken,
+}
+
+impl Drop for SseSubscription {
+    fn drop(&mut self) {
+        self._cancel.cancel();
+    }
 }
 
 // ---------------------------------------------------------------------------

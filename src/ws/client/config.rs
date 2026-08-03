@@ -60,4 +60,40 @@ impl WsClientConfig {
             )),
         }
     }
+
+    pub fn with_heartbeat_interval(mut self, interval: Duration) -> Self {
+        self.heartbeat_interval = interval;
+        self
+    }
+
+    pub fn with_heartbeat_timeout(mut self, timeout: Duration) -> Self {
+        self.heartbeat_timeout = timeout;
+        self
+    }
+
+    pub fn with_request_timeout(mut self, timeout: Duration) -> Self {
+        self.request_timeout = timeout;
+        self
+    }
+
+    pub fn with_auth_timeout(mut self, timeout: Duration) -> Self {
+        self.auth_timeout = timeout;
+        self
+    }
+
+    pub fn with_max_payload_bytes(mut self, max_payload_bytes: usize) -> Self {
+        self.max_payload_bytes = max_payload_bytes;
+        self
+    }
+
+    #[cfg(feature = "crypto")]
+    pub fn with_noise_server_key(mut self, key: Vec<u8>) -> Self {
+        self.noise_server_key = Some(key);
+        self
+    }
+
+    pub fn with_backoff(mut self, backoff: Arc<dyn BackoffStrategy>) -> Self {
+        self.backoff = backoff;
+        self
+    }
 }

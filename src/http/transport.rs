@@ -40,18 +40,17 @@ impl Transport for HttpClient {
 
     fn send_event(&self, data: Vec<u8>, _priority: MessagePriority) -> Result<(), TransportError> {
         let client = self.client.clone();
-        let url = match self.resolve("/event") {
-            Ok(url) => url,
-            Err(e) => return Err(e),
-        };
-        tokio::spawn(async move {
-            let _ = client
-                .post(url)
-                .header("Content-Type", "application/octet-stream")
-                .body(data)
-                .send()
-                .await;
-        });
+        let url = self.resolve("/event")?;
+        if let Ok(mut tasks) = self.tasks.lock() {
+            tasks.spawn(async move {
+                let _ = client
+                    .post(url)
+                    .header("Content-Type", "application/octet-stream")
+                    .body(data)
+                    .send()
+                    .await;
+            });
+        }
         Ok(())
     }
 
@@ -61,17 +60,18 @@ impl Transport for HttpClient {
             Ok(url) => url,
             Err(_) => return,
         };
-        tokio::spawn(async move {
-            let cancel = tokio_util::sync::CancellationToken::new();
-            let handler_wrapper = Arc::new(move |_event_type: String, data: String| {
-                handler(data.into_bytes());
+        let cancel = self.cancel.clone();
+        if let Ok(mut tasks) = self.tasks.lock() {
+            tasks.spawn(async move {
+                let handler_wrapper = Arc::new(move |_event_type: String, data: String| {
+                    handler(data.into_bytes());
+                });
+                super::client::sse_loop(client, url, handler_wrapper, cancel).await;
             });
-            super::client::sse_loop(client, url, handler_wrapper, cancel).await;
-        });
+        }
     }
 
     fn subscribe_state(&self) -> tokio::sync::watch::Receiver<ConnectionState> {
-        let (_tx, rx) = tokio::sync::watch::channel(ConnectionState::Online);
-        rx
+        self.state_rx.clone()
     }
 }
