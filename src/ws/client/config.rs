@@ -43,9 +43,13 @@ pub struct WsClientConfig {
 
 impl WsClientConfig {
     pub fn new(protocol_name: impl Into<String>, protocol_version: impl Into<String>) -> Self {
+        let protocol_name = protocol_name.into();
+        let protocol_version = protocol_version.into();
+        crate::utils::validate_protocol_string(&protocol_name);
+        crate::utils::validate_protocol_string(&protocol_version);
         Self {
-            protocol_name: protocol_name.into(),
-            protocol_version: protocol_version.into(),
+            protocol_name,
+            protocol_version,
             heartbeat_interval: DEFAULT_HEARTBEAT_INTERVAL,
             heartbeat_timeout: DEFAULT_HEARTBEAT_TIMEOUT,
             request_timeout: DEFAULT_REQUEST_TIMEOUT,

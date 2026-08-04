@@ -24,9 +24,13 @@ impl WsServerConfig {
         protocol_version: impl Into<String>,
         #[cfg(feature = "crypto")] noise_private_key: Vec<u8>,
     ) -> Self {
+        let protocol_name = protocol_name.into();
+        let protocol_version = protocol_version.into();
+        crate::utils::validate_protocol_string(&protocol_name);
+        crate::utils::validate_protocol_string(&protocol_version);
         Self {
-            protocol_name: protocol_name.into(),
-            protocol_version: protocol_version.into(),
+            protocol_name,
+            protocol_version,
             #[cfg(feature = "crypto")]
             noise_private_key,
             max_payload_bytes: 4 * 1024 * 1024,

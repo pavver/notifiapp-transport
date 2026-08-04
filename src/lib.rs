@@ -116,5 +116,7 @@ pub use ws::{
     WsClient, WsClientConfig, WsServerConfig, accept_ws_session,
 };
 
+pub(crate) mod utils;
+
 #[cfg(feature = "http")]
 pub use http::{HttpClient, HttpClientConfig, SseEmitter, SseResponse, SseSubscription, sse_pair};
