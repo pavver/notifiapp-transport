@@ -19,7 +19,7 @@ pub enum SessionCmd {
 #[derive(Clone)]
 pub struct ServerSessionHandle {
     pub id: Uuid,
-    pub(crate) cmd_tx: std::sync::Arc<mpsc::UnboundedSender<SessionCmd>>,
+    pub(crate) cmd_tx: std::sync::Arc<mpsc::Sender<SessionCmd>>,
     pub(crate) state_rx: watch::Receiver<ConnectionState>,
 }
 
@@ -27,7 +27,7 @@ impl ServerSessionHandle {
     /// Send a response frame matched by the client's request `id`.
     pub fn respond(&self, id: u32, data: Vec<u8>) -> Result<(), TransportError> {
         self.cmd_tx
-            .send(SessionCmd::Send {
+            .try_send(SessionCmd::Send {
                 frame: Frame {
                     id,
                     kind: FrameKind::Message,
@@ -35,7 +35,10 @@ impl ServerSessionHandle {
                 },
                 priority: MessagePriority::Normal,
             })
-            .map_err(|_| TransportError::ChannelError)
+            .map_err(|e| match e {
+                mpsc::error::TrySendError::Full(_) => TransportError::BufferFull,
+                _ => TransportError::ChannelError,
+            })
     }
 
     /// Push a server-initiated event frame (`id = 0`).
@@ -45,7 +48,7 @@ impl ServerSessionHandle {
         priority: MessagePriority,
     ) -> Result<(), TransportError> {
         self.cmd_tx
-            .send(SessionCmd::Send {
+            .try_send(SessionCmd::Send {
                 frame: Frame {
                     id: 0,
                     kind: FrameKind::Event,
@@ -53,12 +56,15 @@ impl ServerSessionHandle {
                 },
                 priority,
             })
-            .map_err(|_| TransportError::ChannelError)
+            .map_err(|e| match e {
+                mpsc::error::TrySendError::Full(_) => TransportError::BufferFull,
+                _ => TransportError::ChannelError,
+            })
     }
 
     /// Gracefully close the session.
     pub fn close(&self) {
-        self.cmd_tx.send(SessionCmd::Close).ok();
+        self.cmd_tx.try_send(SessionCmd::Close).ok();
     }
 
     pub fn state(&self) -> ConnectionState {
@@ -78,7 +84,7 @@ impl ServerSessionHandle {
 impl Drop for ServerSessionHandle {
     fn drop(&mut self) {
         if std::sync::Arc::strong_count(&self.cmd_tx) == 1 {
-            self.cmd_tx.send(SessionCmd::Close).ok();
+            self.cmd_tx.try_send(SessionCmd::Close).ok();
         }
     }
 }

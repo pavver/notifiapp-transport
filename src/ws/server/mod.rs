@@ -26,7 +26,7 @@ pub async fn accept_ws_session<S, E>(
 ) -> Result<
     (
         ServerSessionHandle,
-        mpsc::UnboundedReceiver<Frame>,
+        mpsc::Receiver<Frame>,
         impl std::future::Future<Output = ()> + Send,
     ),
     TransportError,
@@ -122,8 +122,8 @@ where
     // --- Build handles ---
     let session_id = Uuid::new_v4();
     let (state_tx, state_rx) = watch::channel(ConnectionState::Online);
-    let (cmd_tx, cmd_rx) = mpsc::unbounded_channel::<SessionCmd>();
-    let (inbox_tx, inbox_rx) = mpsc::unbounded_channel::<Frame>();
+    let (cmd_tx, cmd_rx) = mpsc::channel::<SessionCmd>(config.buffer_size);
+    let (inbox_tx, inbox_rx) = mpsc::channel::<Frame>(config.buffer_size);
 
     let handle = ServerSessionHandle {
         id: session_id,

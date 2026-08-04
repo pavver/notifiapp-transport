@@ -18,8 +18,8 @@ use super::handle::SessionCmd;
 pub(crate) async fn run_server_session<S, E>(
     mut ws: S,
     #[cfg(feature = "crypto")] mut noise: NoiseSession,
-    mut cmd_rx: mpsc::UnboundedReceiver<SessionCmd>,
-    inbox_tx: mpsc::UnboundedSender<Frame>,
+    mut cmd_rx: mpsc::Receiver<SessionCmd>,
+    inbox_tx: mpsc::Sender<Frame>,
     state_tx: watch::Sender<ConnectionState>,
     max_bytes: usize,
     heartbeat_interval: Duration,
@@ -72,7 +72,7 @@ pub(crate) async fn run_server_session<S, E>(
                                             }
                                             FrameKind::Pong => { /* timer already reset */ }
                                             _ => {
-                                                if inbox_tx.send(frame).is_err() {
+                                                if inbox_tx.send(frame).await.is_err() {
                                                     break; // reader dropped
                                                 }
                                             }

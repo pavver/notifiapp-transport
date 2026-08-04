@@ -8,6 +8,7 @@ use crate::{
 };
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
+use tokio::sync::mpsc;
 use tokio::time::{Duration, sleep, timeout};
 use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::protocol::Message};
 
@@ -20,7 +21,7 @@ type ConnectStream = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::ne
 impl WsClient {
     pub(crate) async fn connection_loop(
         self: Arc<Self>,
-        mut cmd_rx: tokio::sync::mpsc::UnboundedReceiver<ClientCmd>,
+        mut cmd_rx: mpsc::Receiver<ClientCmd>,
     ) {
         let mut reconnect_attempt: u32 = 0;
         let mut ever_connected = false;
@@ -238,7 +239,7 @@ impl WsClient {
     async fn handle_version_handshake(
         &self,
         ws: &mut ConnectStream,
-        cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ClientCmd>,
+        cmd_rx: &mut mpsc::Receiver<ClientCmd>,
     ) -> Result<(), Option<ConnectionState>> {
         self.state_tx.send(ConnectionState::Handshaking).ok();
         let hello = format!(
@@ -422,7 +423,7 @@ impl WsClient {
         &self,
         ws: &mut ConnectStream,
         #[cfg(feature = "crypto")] noise: &mut NoiseSession,
-        cmd_rx: &mut tokio::sync::mpsc::UnboundedReceiver<ClientCmd>,
+        cmd_rx: &mut mpsc::Receiver<ClientCmd>,
     ) {
         let mut accumulator = FrameAccumulator::new();
         let mut scheduler = WfqScheduler::<Frame>::new();

@@ -34,7 +34,7 @@ pub struct WsClient {
     pub(crate) next_id: AtomicU32,
     pub(crate) state_tx: watch::Sender<ConnectionState>,
     pub(crate) state_rx: watch::Receiver<ConnectionState>,
-    pub(crate) cmd_tx: mpsc::UnboundedSender<ClientCmd>,
+    pub(crate) cmd_tx: mpsc::Sender<ClientCmd>,
     /// Awaiting responses: request_id → oneshot sender.
     pub(crate) pending: DashMap<u32, oneshot::Sender<Result<Vec<u8>, TransportError>>>,
     /// Server-push event callback. All events are dispatched here.
@@ -58,7 +58,7 @@ impl WsClient {
     /// provided.
     pub fn new(config: WsClientConfig, auth: Option<Arc<dyn AuthHandler>>) -> Arc<Self> {
         let (state_tx, state_rx) = watch::channel(ConnectionState::Disconnected);
-        let (cmd_tx, cmd_rx) = mpsc::unbounded_channel();
+        let (cmd_tx, cmd_rx) = mpsc::channel(config.buffer_size);
         let cancel = tokio_util::sync::CancellationToken::new();
 
         let client = Arc::new(Self {
@@ -89,14 +89,14 @@ impl WsClient {
     pub fn set_endpoint(&self, url_str: &str) -> Result<(), TransportError> {
         url::Url::parse(url_str).map_err(|_| TransportError::InvalidUrl(url_str.to_string()))?;
         *self.url.write() = Some(url_str.to_string());
-        self.cmd_tx.send(ClientCmd::EndpointChanged).ok();
+        self.cmd_tx.try_send(ClientCmd::EndpointChanged).ok();
         Ok(())
     }
 
     /// Clear current endpoint, stopping active connection.
     pub fn clear_endpoint(&self) {
         *self.url.write() = None;
-        self.cmd_tx.send(ClientCmd::EndpointChanged).ok();
+        self.cmd_tx.try_send(ClientCmd::EndpointChanged).ok();
     }
 
     /// Retrieve the current endpoint URL if set.
@@ -119,7 +119,7 @@ impl WsClient {
 
     /// Instantly trigger a connection or reconnect attempt, resetting backoff timers.
     pub fn reconnect(&self) {
-        self.cmd_tx.send(ClientCmd::Reconnect).ok();
+        self.cmd_tx.try_send(ClientCmd::Reconnect).ok();
     }
 
     /// Shutdown the client and terminate the background connection loop.
@@ -180,6 +180,7 @@ impl WsClient {
         };
         self.cmd_tx
             .send(ClientCmd::Send { frame, priority })
+            .await
             .map_err(|_| TransportError::ChannelError)?;
 
         match timeout(self.config.request_timeout, rx).await {
@@ -207,13 +208,16 @@ impl WsClient {
             data,
         };
         self.cmd_tx
-            .send(ClientCmd::Send { frame, priority })
-            .map_err(|_| TransportError::ChannelError)
+            .try_send(ClientCmd::Send { frame, priority })
+            .map_err(|e| match e {
+                mpsc::error::TrySendError::Full(_) => TransportError::BufferFull,
+                _ => TransportError::ChannelError,
+            })
     }
 
     /// Wake the connection loop (e.g., after new auth data is provided).
     pub fn wake(&self) {
-        self.cmd_tx.send(ClientCmd::WakeUp).ok();
+        self.cmd_tx.try_send(ClientCmd::WakeUp).ok();
     }
 
     // -----------------------------------------------------------------------
@@ -244,7 +248,7 @@ impl WsClient {
                     data: vec![],
                 };
                 self.cmd_tx
-                    .send(ClientCmd::Send {
+                    .try_send(ClientCmd::Send {
                         frame: pong,
                         priority: MessagePriority::RealTime,
                     })

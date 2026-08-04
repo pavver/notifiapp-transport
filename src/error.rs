@@ -62,6 +62,9 @@ pub enum TransportError {
     #[error("internal channel error")]
     ChannelError,
 
+    #[error("buffer is full, cannot enqueue frame")]
+    BufferFull,
+
     // --- HTTP/SSE errors (feature = "http") ---
     #[cfg(feature = "http")]
     #[error("http error: {0}")]

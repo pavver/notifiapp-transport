@@ -16,6 +16,8 @@ pub struct WsServerConfig {
     pub heartbeat_interval: Duration,
     /// How long to wait for a Pong before closing the connection.
     pub heartbeat_timeout: Duration,
+    /// Maximum number of commands/messages buffered for sending.
+    pub buffer_size: usize,
 }
 
 impl WsServerConfig {
@@ -36,6 +38,7 @@ impl WsServerConfig {
             max_payload_bytes: 4 * 1024 * 1024,
             heartbeat_interval: Duration::from_secs(30),
             heartbeat_timeout: Duration::from_secs(10),
+            buffer_size: 100,
         }
     }
 }

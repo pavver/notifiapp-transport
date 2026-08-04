@@ -16,6 +16,8 @@ pub const DEFAULT_HEARTBEAT_INTERVAL: Duration = Duration::from_secs(30);
 pub const DEFAULT_HEARTBEAT_TIMEOUT: Duration = Duration::from_secs(10);
 /// Default maximum payload size (4 MiB).
 pub const DEFAULT_MAX_PAYLOAD: usize = 4 * 1024 * 1024;
+/// Default maximum number of commands/messages buffered for sending.
+pub const DEFAULT_BUFFER_SIZE: usize = 100;
 
 /// Configuration for `WsClient`.
 pub struct WsClientConfig {
@@ -39,6 +41,8 @@ pub struct WsClientConfig {
     pub noise_server_key: Option<Vec<u8>>,
     /// Strategy for calculating delays between reconnection attempts.
     pub backoff: Arc<dyn BackoffStrategy>,
+    /// Maximum number of commands/messages buffered for sending.
+    pub buffer_size: usize,
 }
 
 impl WsClientConfig {
@@ -62,6 +66,7 @@ impl WsClientConfig {
                 2.0,
                 Duration::from_secs(30),
             )),
+            buffer_size: DEFAULT_BUFFER_SIZE,
         }
     }
 
@@ -98,6 +103,11 @@ impl WsClientConfig {
 
     pub fn with_backoff(mut self, backoff: Arc<dyn BackoffStrategy>) -> Self {
         self.backoff = backoff;
+        self
+    }
+
+    pub fn with_buffer_size(mut self, buffer_size: usize) -> Self {
+        self.buffer_size = buffer_size;
         self
     }
 }
