@@ -4,9 +4,8 @@ pub mod session;
 
 use crate::{error::TransportError, frame::Frame, state::ConnectionState};
 use futures_util::{SinkExt, StreamExt};
-use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{mpsc, watch};
-use tokio_tungstenite::{WebSocketStream, tungstenite::protocol::Message};
+use tokio_tungstenite::tungstenite::protocol::Message;
 use uuid::Uuid;
 
 #[cfg(feature = "crypto")]
@@ -21,8 +20,8 @@ use session::run_server_session;
 
 /// Perform the transport handshake on an incoming raw WS stream and return a
 /// session handle + inbox receiver + background task future.
-pub async fn accept_ws_session<S>(
-    mut ws: WebSocketStream<S>,
+pub async fn accept_ws_session<S, E>(
+    mut ws: S,
     config: Arc<WsServerConfig>,
 ) -> Result<
     (
@@ -33,7 +32,12 @@ pub async fn accept_ws_session<S>(
     TransportError,
 >
 where
-    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    S: futures_util::Stream<Item = Result<Message, E>>
+        + futures_util::Sink<Message, Error = E>
+        + Unpin
+        + Send
+        + 'static,
+    E: std::fmt::Display + std::fmt::Debug + Send + Sync + 'static,
 {
     // --- Protocol version handshake ---
     let hello_msg = match ws.next().await {

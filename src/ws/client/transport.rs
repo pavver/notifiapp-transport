@@ -28,4 +28,8 @@ impl Transport for WsClient {
     fn subscribe_state(&self) -> tokio::sync::watch::Receiver<ConnectionState> {
         self.subscribe_state()
     }
+
+    fn shutdown(&self) {
+        self.shutdown();
+    }
 }

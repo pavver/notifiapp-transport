@@ -5,10 +5,9 @@ use crate::{
     state::ConnectionState,
 };
 use futures_util::{SinkExt, StreamExt};
-use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::{mpsc, watch};
 use tokio::time::Duration;
-use tokio_tungstenite::{WebSocketStream, tungstenite::protocol::Message};
+use tokio_tungstenite::tungstenite::protocol::Message;
 
 #[cfg(feature = "crypto")]
 use crate::crypto::NoiseSession;
@@ -16,8 +15,8 @@ use crate::crypto::NoiseSession;
 use super::handle::SessionCmd;
 
 #[allow(clippy::too_many_arguments)]
-pub(crate) async fn run_server_session<S>(
-    mut ws: WebSocketStream<S>,
+pub(crate) async fn run_server_session<S, E>(
+    mut ws: S,
     #[cfg(feature = "crypto")] mut noise: NoiseSession,
     mut cmd_rx: mpsc::UnboundedReceiver<SessionCmd>,
     inbox_tx: mpsc::UnboundedSender<Frame>,
@@ -26,7 +25,11 @@ pub(crate) async fn run_server_session<S>(
     heartbeat_interval: Duration,
     heartbeat_timeout: Duration,
 ) where
-    S: AsyncRead + AsyncWrite + Unpin + Send,
+    S: futures_util::Stream<Item = Result<Message, E>>
+        + futures_util::Sink<Message, Error = E>
+        + Unpin
+        + Send,
+    E: std::fmt::Display + std::fmt::Debug + Send + Sync + 'static,
 {
     let mut accumulator = FrameAccumulator::new();
     let mut scheduler = WfqScheduler::<Frame>::new();
@@ -150,5 +153,5 @@ pub(crate) async fn run_server_session<S>(
     }
 
     state_tx.send(ConnectionState::Disconnected).ok();
-    let _ = ws.close(None).await;
+    let _ = ws.close().await;
 }

@@ -85,7 +85,8 @@ impl HttpClient {
             .build()
             .map_err(|e| TransportError::ConnectionFailed(e.to_string()))?;
 
-        let (state_tx, state_rx) = tokio::sync::watch::channel(crate::state::ConnectionState::Online);
+        let (state_tx, state_rx) =
+            tokio::sync::watch::channel(crate::state::ConnectionState::Online);
 
         Ok(Self {
             client,

@@ -261,3 +261,9 @@ async fn test_ws_reconnect_backoff_states() {
 
     server_handle.abort();
 }
+
+#[tokio::test]
+async fn test_ws_wfq_priority_ordering() {
+    // This test will verify that MessagePriority::RealTime is processed before MessagePriority::Bulk
+    // Let's implement it.
+}

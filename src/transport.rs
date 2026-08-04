@@ -21,4 +21,7 @@ pub trait Transport: Send + Sync {
 
     /// Subscribe to connection state changes.
     fn subscribe_state(&self) -> tokio::sync::watch::Receiver<ConnectionState>;
+
+    /// Shutdown the transport, terminating any background tasks.
+    fn shutdown(&self);
 }

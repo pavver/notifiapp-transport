@@ -52,6 +52,7 @@ impl WsClient {
                             }
                         }
                         if cancelled {
+                            println!("mock: connection_loop exiting!");
                             return;
                         }
                         continue;
@@ -70,8 +71,6 @@ impl WsClient {
                             delay,
                         })
                         .ok();
-                } else {
-                    self.state_tx.send(ConnectionState::Connecting).ok();
                 }
 
                 // Sleep or wake up on commands
@@ -112,7 +111,29 @@ impl WsClient {
             // --- Protocol version handshake ---
             if let Err(state) = self.handle_version_handshake(&mut ws, &mut cmd_rx).await {
                 if let Some(s) = state {
-                    self.state_tx.send(s).ok();
+                    self.state_tx.send(s.clone()).ok();
+                    if matches!(s, ConnectionState::VersionMismatch { .. }) {
+                        self.pending.retain(|_, _| false);
+                        let mut cancelled = false;
+                        loop {
+                            tokio::select! {
+                                _ = self.cancel.cancelled() => {
+                                    cancelled = true;
+                                    break;
+                                }
+                                Some(cmd) = cmd_rx.recv() => {
+                                    if matches!(cmd, ClientCmd::WakeUp | ClientCmd::Reconnect | ClientCmd::EndpointChanged) {
+                                        reconnect_attempt = 0;
+                                        break;
+                                    }
+                                }
+                            }
+                        }
+                        if cancelled {
+                            return;
+                        }
+                        continue;
+                    }
                 }
                 reconnect_attempt += 1;
                 continue;
@@ -162,7 +183,10 @@ impl WsClient {
                     }
                     continue;
                 }
-                Err(_) => {
+                Err(e) => {
+                    self.state_tx
+                        .send(ConnectionState::Error(e.to_string()))
+                        .ok();
                     reconnect_attempt += 1;
                     continue;
                 }
@@ -221,8 +245,8 @@ impl WsClient {
             "{} {}",
             self.config.protocol_name, self.config.protocol_version
         );
-        if ws.send(Message::Text(hello.into())).await.is_err() {
-            return Err(None);
+        if let Err(e) = ws.send(Message::Text(hello.into())).await {
+            return Err(Some(ConnectionState::Error(e.to_string())));
         }
         match ws.next().await {
             Some(Ok(Message::Text(reply))) if reply.contains("PROTOCOL_ACCEPTED") => Ok(()),
@@ -237,6 +261,7 @@ impl WsClient {
                     server: server_ver,
                 };
                 self.state_tx.send(state.clone()).ok();
+                self.pending.retain(|_, _| false);
 
                 // Version mismatch is terminal until configuration/endpoint changes.
                 let mut cancelled = false;
@@ -258,7 +283,13 @@ impl WsClient {
                 }
                 Err(None)
             }
-            _ => Err(None),
+            Some(Err(e)) => Err(Some(ConnectionState::Error(e.to_string()))),
+            None => Err(Some(ConnectionState::Error(
+                "Connection closed during handshake".into(),
+            ))),
+            _ => Err(Some(ConnectionState::Error(
+                "Invalid handshake reply".into(),
+            ))),
         }
     }
 
@@ -357,11 +388,22 @@ impl WsClient {
             .await;
 
             let response_data = match auth_result {
-                Ok(Ok(frame)) if frame.id == 1 => frame.data,
-                _ => return Err(TransportError::ConnectionClosed),
+                Ok(Ok(frame)) if frame.id == 1 => {
+                    println!(
+                        "Transport: received auth frame data length: {}",
+                        frame.data.len()
+                    );
+                    frame.data
+                }
+                x => {
+                    println!("Transport: auth_result mismatch: {:?}", x);
+                    return Err(TransportError::ConnectionClosed);
+                }
             };
 
-            match self.auth.process_auth_response(&response_data).await {
+            let outcome = self.auth.process_auth_response(&response_data).await;
+            println!("Transport: auth outcome: {:?}", outcome);
+            match outcome {
                 AuthOutcome::Success => {}
                 AuthOutcome::Unauthorized => {
                     self.state_tx.send(ConnectionState::Unauthorized).ok();
@@ -411,17 +453,24 @@ impl WsClient {
                             #[cfg(not(feature = "crypto"))]
                             let decrypted = data.to_vec();
 
+                            println!("client: feeding accumulator {} bytes", decrypted.len());
                             match accumulator.feed(&decrypted, self.config.max_payload_bytes) {
                                 Ok(Some(frame_bytes)) => {
+                                    println!("client: assembled frame of {} bytes", frame_bytes.len());
                                     match decode_frame(&frame_bytes) {
-                                        Ok(frame) => self.dispatch_frame(frame),
+                                        Ok(frame) => {
+                                            println!("client: dispatched frame id={}", frame.id);
+                                            self.dispatch_frame(frame);
+                                        }
                                         Err(e) => {
-                                            tracing::warn!("Frame decode error: {}", e);
+                                            println!("mock: Frame decode error: {}", e);
                                             break;
                                         }
                                     }
                                 }
-                                Ok(None) => {}
+                                Ok(None) => {
+                                    println!("client: frame incomplete");
+                                }
                                 Err(e) => {
                                     tracing::warn!("Frame accumulator error: {}", e);
                                     break;
@@ -441,19 +490,20 @@ impl WsClient {
                             while let Some(frame) = scheduler.next() {
                                 let encoded = match encode_frame(&frame) {
                                     Ok(b) => b,
-                                    Err(_) => { send_error = true; break; }
+                                    Err(e) => { println!("mock: encode_frame error: {:?}", e); send_error = true; break; }
                                 };
 
                                 #[cfg(feature = "crypto")]
                                 let chunks = match noise.encrypt_chunked(&encoded) {
                                     Ok(c) => c,
-                                    Err(_) => { send_error = true; break; }
+                                    Err(e) => { println!("mock: encrypt error: {:?}", e); send_error = true; break; }
                                 };
                                 #[cfg(not(feature = "crypto"))]
                                 let chunks = vec![encoded];
 
                                 for chunk in chunks {
-                                    if ws.send(Message::Binary(chunk.into())).await.is_err() {
+                                    if let Err(e) = ws.send(Message::Binary(chunk.into())).await {
+                                        println!("mock: ws.send error: {:?}", e);
                                         send_error = true;
                                         break;
                                     }

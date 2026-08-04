@@ -74,4 +74,8 @@ impl Transport for HttpClient {
     fn subscribe_state(&self) -> tokio::sync::watch::Receiver<ConnectionState> {
         self.state_rx.clone()
     }
+
+    fn shutdown(&self) {
+        self.cancel.cancel();
+    }
 }
