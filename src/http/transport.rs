@@ -75,6 +75,22 @@ impl Transport for HttpClient {
         self.state_rx.clone()
     }
 
+    fn set_endpoint(&self, url_str: &str) -> Result<(), TransportError> {
+        let url = url::Url::parse(url_str)
+            .map_err(|_| TransportError::InvalidUrl(url_str.to_string()))?;
+        *self.base_url.write() = Some(url);
+        // Wake up any tasks if necessary (HttpClient doesn't currently loop, but just in case)
+        Ok(())
+    }
+
+    fn clear_endpoint(&self) {
+        *self.base_url.write() = None;
+    }
+
+    fn endpoint(&self) -> Option<String> {
+        self.base_url.read().as_ref().map(|u| u.to_string())
+    }
+
     fn shutdown(&self) {
         self.cancel.cancel();
     }

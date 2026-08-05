@@ -29,6 +29,18 @@ impl Transport for WsClient {
         self.subscribe_state()
     }
 
+    fn set_endpoint(&self, url_str: &str) -> Result<(), TransportError> {
+        self.set_endpoint(url_str)
+    }
+
+    fn clear_endpoint(&self) {
+        self.clear_endpoint()
+    }
+
+    fn endpoint(&self) -> Option<String> {
+        self.endpoint()
+    }
+
     fn shutdown(&self) {
         self.shutdown();
     }

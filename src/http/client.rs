@@ -53,8 +53,10 @@ impl HttpClientConfig {
 /// primary WS+postcard transport. It does not support Noise encryption.
 pub struct HttpClient {
     pub(crate) client: Client,
-    pub(crate) base_url: Url,
+    pub(crate) base_url: parking_lot::RwLock<Option<Url>>,
+    #[allow(dead_code)]
     pub(crate) config: Arc<HttpClientConfig>,
+    #[allow(dead_code)]
     pub(crate) state_tx: tokio::sync::watch::Sender<crate::state::ConnectionState>,
     pub(crate) state_rx: tokio::sync::watch::Receiver<crate::state::ConnectionState>,
     pub(crate) cancel: CancellationToken,
@@ -63,8 +65,14 @@ pub struct HttpClient {
 
 impl HttpClient {
     pub fn new(config: HttpClientConfig) -> Result<Self, TransportError> {
-        let base_url = Url::parse(&config.base_url)
-            .map_err(|_| TransportError::InvalidUrl(config.base_url.clone()))?;
+        let base_url_opt = if config.base_url.is_empty() {
+            None
+        } else {
+            Some(
+                Url::parse(&config.base_url)
+                    .map_err(|_| TransportError::InvalidUrl(config.base_url.clone()))?,
+            )
+        };
 
         let mut builder = Client::builder()
             .timeout(config.request_timeout)
@@ -90,7 +98,7 @@ impl HttpClient {
 
         Ok(Self {
             client,
-            base_url,
+            base_url: parking_lot::RwLock::new(base_url_opt),
             config: Arc::new(config),
             state_tx,
             state_rx,
@@ -215,7 +223,11 @@ impl HttpClient {
     }
 
     pub(crate) fn resolve(&self, path: &str) -> Result<Url, TransportError> {
-        self.base_url
+        let lock = self.base_url.read();
+        let base_url = lock
+            .as_ref()
+            .ok_or_else(|| TransportError::InvalidUrl("No endpoint set".to_string()))?;
+        base_url
             .join(path)
             .map_err(|_| TransportError::InvalidUrl(path.to_string()))
     }
@@ -329,4 +341,36 @@ async fn connect_sse(
         }
     }
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::transport::Transport;
+
+    #[test]
+    fn test_http_client_endpoint_management() {
+        let config = HttpClientConfig::new("");
+        let client = HttpClient::new(config).unwrap();
+
+        // Initially empty
+        assert!(client.endpoint().is_none());
+        assert!(client.resolve("/api").is_err());
+
+        // Set endpoint
+        assert!(client.set_endpoint("http://127.0.0.1:8080").is_ok());
+        assert_eq!(
+            client.endpoint(),
+            Some("http://127.0.0.1:8080/".to_string())
+        );
+        assert_eq!(
+            client.resolve("/api/v1").unwrap().to_string(),
+            "http://127.0.0.1:8080/api/v1"
+        );
+
+        // Clear endpoint
+        client.clear_endpoint();
+        assert!(client.endpoint().is_none());
+        assert!(client.resolve("/api").is_err());
+    }
 }

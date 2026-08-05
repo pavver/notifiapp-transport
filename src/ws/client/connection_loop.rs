@@ -19,10 +19,7 @@ use crate::crypto::NoiseSession;
 type ConnectStream = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 impl WsClient {
-    pub(crate) async fn connection_loop(
-        self: Arc<Self>,
-        mut cmd_rx: mpsc::Receiver<ClientCmd>,
-    ) {
+    pub(crate) async fn connection_loop(self: Arc<Self>, mut cmd_rx: mpsc::Receiver<ClientCmd>) {
         let mut reconnect_attempt: u32 = 0;
         let mut ever_connected = false;
 

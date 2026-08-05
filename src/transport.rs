@@ -22,6 +22,15 @@ pub trait Transport: Send + Sync {
     /// Subscribe to connection state changes.
     fn subscribe_state(&self) -> tokio::sync::watch::Receiver<ConnectionState>;
 
+    /// Set the endpoint URL.
+    fn set_endpoint(&self, url_str: &str) -> Result<(), TransportError>;
+
+    /// Clear current endpoint.
+    fn clear_endpoint(&self);
+
+    /// Retrieve the current endpoint URL if set.
+    fn endpoint(&self) -> Option<String>;
+
     /// Shutdown the transport, terminating any background tasks.
     fn shutdown(&self);
 }

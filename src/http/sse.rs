@@ -116,6 +116,7 @@ pub fn broadcast_sse_json<T: Serialize>(
 // ---------------------------------------------------------------------------
 
 /// Convenience: return an SSE error response with a given HTTP status.
+#[allow(dead_code)]
 pub fn sse_error(status: StatusCode, message: &str) -> Response {
     (status, message.to_string()).into_response()
 }
