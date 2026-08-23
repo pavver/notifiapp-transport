@@ -4,7 +4,8 @@ use std::sync::Arc;
 use crate::{error::TransportError, scheduler::MessagePriority, state::ConnectionState};
 
 /// Common trait for all transport implementations.
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 pub trait Transport: Send + Sync {
     /// Send a request and await the response.
     async fn request(

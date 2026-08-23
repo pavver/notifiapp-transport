@@ -1,4 +1,6 @@
+use super::stream::{WsMessage, WsStream};
 use super::{WsClient, cmd::ClientCmd};
+use crate::runtime::{Duration, Instant, sleep, sleep_until, timeout};
 use crate::{
     auth::AuthOutcome,
     error::TransportError,
@@ -9,14 +11,9 @@ use crate::{
 use futures_util::{SinkExt, StreamExt};
 use std::sync::Arc;
 use tokio::sync::mpsc;
-use tokio::time::{Duration, sleep, timeout};
-use tokio_tungstenite::{WebSocketStream, connect_async, tungstenite::protocol::Message};
 
 #[cfg(feature = "crypto")]
 use crate::crypto::NoiseSession;
-
-// Use the stream type returned by tokio-tungstenite connect_async
-type ConnectStream = WebSocketStream<tokio_tungstenite::MaybeTlsStream<tokio::net::TcpStream>>;
 
 impl WsClient {
     pub(crate) async fn connection_loop(self: Arc<Self>, mut cmd_rx: mpsc::Receiver<ClientCmd>) {
@@ -95,8 +92,8 @@ impl WsClient {
             self.state_tx.send(ConnectionState::Connecting).ok();
 
             // --- Open WS connection ---
-            let mut ws = match connect_async(url.as_str()).await {
-                Ok((ws, _)) => ws,
+            let mut ws = match WsStream::connect(url.as_str()).await {
+                Ok(ws) => ws,
                 Err(e) => {
                     self.state_tx
                         .send(ConnectionState::Error(e.to_string()))
@@ -235,7 +232,7 @@ impl WsClient {
 
     async fn handle_version_handshake(
         &self,
-        ws: &mut ConnectStream,
+        ws: &mut WsStream,
         cmd_rx: &mut mpsc::Receiver<ClientCmd>,
     ) -> Result<(), Option<ConnectionState>> {
         self.state_tx.send(ConnectionState::Handshaking).ok();
@@ -243,12 +240,12 @@ impl WsClient {
             "{} {}",
             self.config.protocol_name, self.config.protocol_version
         );
-        if let Err(e) = ws.send(Message::Text(hello.into())).await {
+        if let Err(e) = ws.send(WsMessage::Text(hello)).await {
             return Err(Some(ConnectionState::Error(e.to_string())));
         }
         match ws.next().await {
-            Some(Ok(Message::Text(reply))) if reply.contains("PROTOCOL_ACCEPTED") => Ok(()),
-            Some(Ok(Message::Text(reply))) if reply.contains("PROTOCOL_REJECTED") => {
+            Some(Ok(WsMessage::Text(reply))) if reply.contains("PROTOCOL_ACCEPTED") => Ok(()),
+            Some(Ok(WsMessage::Text(reply))) if reply.contains("PROTOCOL_REJECTED") => {
                 let server_ver = reply
                     .strip_prefix("PROTOCOL_REJECTED ")
                     .unwrap_or("unknown")
@@ -294,7 +291,7 @@ impl WsClient {
     #[cfg(feature = "crypto")]
     async fn handle_noise_handshake(
         &self,
-        ws: &mut ConnectStream,
+        ws: &mut WsStream,
     ) -> Result<NoiseSession, TransportError> {
         self.state_tx.send(ConnectionState::Authenticating).ok();
         let key = self.config.noise_server_key.as_deref();
@@ -306,13 +303,13 @@ impl WsClient {
         let n = noise
             .write_message(&[], &mut h_buf)
             .map_err(|e| TransportError::NoiseHandshakeFailed(e.to_string()))?;
-        ws.send(Message::Binary(h_buf[..n].to_vec().into()))
+        ws.send(WsMessage::Binary(h_buf[..n].to_vec()))
             .await
             .map_err(|e| TransportError::ConnectionFailed(e.to_string()))?;
 
         // <- E, EE, S, ES
         match ws.next().await {
-            Some(Ok(Message::Binary(data))) => {
+            Some(Ok(WsMessage::Binary(data))) => {
                 noise
                     .read_message(&data, &mut h_buf)
                     .map_err(|e| TransportError::NoiseHandshakeFailed(e.to_string()))?;
@@ -324,7 +321,7 @@ impl WsClient {
         let n = noise
             .write_message(&[], &mut h_buf)
             .map_err(|e| TransportError::NoiseHandshakeFailed(e.to_string()))?;
-        ws.send(Message::Binary(h_buf[..n].to_vec().into()))
+        ws.send(WsMessage::Binary(h_buf[..n].to_vec()))
             .await
             .map_err(|e| TransportError::ConnectionFailed(e.to_string()))?;
 
@@ -338,7 +335,7 @@ impl WsClient {
 
     async fn handle_auth(
         &self,
-        ws: &mut ConnectStream,
+        ws: &mut WsStream,
         #[cfg(feature = "crypto")] noise: &mut NoiseSession,
     ) -> Result<(), TransportError> {
         if let Some(auth_bytes) = self.auth.auth_payload().await {
@@ -356,7 +353,7 @@ impl WsClient {
                     Ok(chunks) => {
                         let mut ok = true;
                         for chunk in chunks {
-                            if ws.send(Message::Binary(chunk.into())).await.is_err() {
+                            if ws.send(WsMessage::Binary(chunk)).await.is_err() {
                                 ok = false;
                                 break;
                             }
@@ -367,7 +364,7 @@ impl WsClient {
                 }
             };
             #[cfg(not(feature = "crypto"))]
-            let send_result = ws.send(Message::Binary(encoded.into())).await.is_ok();
+            let send_result = ws.send(WsMessage::Binary(encoded)).await.is_ok();
 
             if !send_result {
                 return Err(TransportError::ConnectionClosed);
@@ -418,26 +415,25 @@ impl WsClient {
 
     async fn run_message_loop(
         &self,
-        ws: &mut ConnectStream,
+        ws: &mut WsStream,
         #[cfg(feature = "crypto")] noise: &mut NoiseSession,
         cmd_rx: &mut mpsc::Receiver<ClientCmd>,
     ) {
         let mut accumulator = FrameAccumulator::new();
         let mut scheduler = WfqScheduler::<Frame>::new();
-        let mut heartbeat_deadline = tokio::time::Instant::now() + self.config.heartbeat_interval;
+        let mut heartbeat_deadline = Instant::now() + self.config.heartbeat_interval;
         let mut waiting_for_pong = false;
 
         loop {
-            let hb = tokio::time::sleep_until(heartbeat_deadline);
+            let hb = sleep_until(heartbeat_deadline);
             tokio::select! {
                 _ = self.cancel.cancelled() => {
                     break;
                 }
                 msg = ws.next() => {
                     match msg {
-                        Some(Ok(Message::Binary(data))) => {
-                            heartbeat_deadline =
-                                tokio::time::Instant::now() + self.config.heartbeat_interval;
+                        Some(Ok(WsMessage::Binary(data))) => {
+                            heartbeat_deadline = Instant::now() + self.config.heartbeat_interval;
                             waiting_for_pong = false;
 
                             #[cfg(feature = "crypto")]
@@ -500,7 +496,7 @@ impl WsClient {
                                 let chunks = vec![encoded];
 
                                 for chunk in chunks {
-                                    if let Err(e) = ws.send(Message::Binary(chunk.into())).await {
+                                    if let Err(e) = ws.send(WsMessage::Binary(chunk)).await {
                                         println!("mock: ws.send error: {:?}", e);
                                         send_error = true;
                                         break;
@@ -516,7 +512,7 @@ impl WsClient {
                                             scheduler.enqueue(f, p);
                                         }
                                         ClientCmd::EndpointChanged | ClientCmd::Reconnect => {
-                                            let _ = ws.close(None).await;
+                                            let _ = ws.close().await;
                                             disconnect = true;
                                         }
                                         ClientCmd::WakeUp => {}
@@ -527,7 +523,7 @@ impl WsClient {
                             if send_error { break; }
                         }
                         ClientCmd::EndpointChanged | ClientCmd::Reconnect => {
-                            let _ = ws.close(None).await;
+                            let _ = ws.close().await;
                             break;
                         }
                         ClientCmd::WakeUp => {}
@@ -536,7 +532,7 @@ impl WsClient {
 
                 _ = hb => {
                     if waiting_for_pong {
-                        let _ = ws.close(None).await;
+                        let _ = ws.close().await;
                         break;
                     }
                     let ping = Frame { id: 0, kind: crate::frame::FrameKind::Ping, data: vec![] };
@@ -544,17 +540,16 @@ impl WsClient {
                         #[cfg(feature = "crypto")]
                         if let Ok(chunks) = noise.encrypt_chunked(&encoded) {
                             for chunk in chunks {
-                                if ws.send(Message::Binary(chunk.into())).await.is_err() {
+                                if ws.send(WsMessage::Binary(chunk)).await.is_err() {
                                     break;
                                 }
                             }
                         }
                         #[cfg(not(feature = "crypto"))]
-                        let _ = ws.send(Message::Binary(encoded.into())).await;
+                        let _ = ws.send(WsMessage::Binary(encoded)).await;
                     }
                     waiting_for_pong = true;
-                    heartbeat_deadline =
-                        tokio::time::Instant::now() + self.config.heartbeat_timeout;
+                    heartbeat_deadline = Instant::now() + self.config.heartbeat_timeout;
                 }
             }
         }
@@ -568,10 +563,10 @@ impl WsClient {
         max_bytes: usize,
     ) -> Result<Frame, TransportError>
     where
-        S: StreamExt<Item = Result<Message, tokio_tungstenite::tungstenite::Error>> + Unpin,
+        S: StreamExt<Item = Result<WsMessage, String>> + Unpin,
     {
         let mut acc = FrameAccumulator::new();
-        while let Some(Ok(Message::Binary(data))) = ws.next().await {
+        while let Some(Ok(WsMessage::Binary(data))) = ws.next().await {
             #[cfg(feature = "crypto")]
             let decrypted = {
                 let mut buf = vec![0u8; data.len()];

@@ -2,11 +2,13 @@ pub mod backoff;
 pub mod cmd;
 pub mod config;
 pub mod connection_loop;
+pub mod stream;
 pub mod transport;
 
 use std::sync::Arc;
 use std::sync::atomic::{AtomicU32, Ordering};
 
+use crate::runtime::{spawn, timeout};
 use crate::{
     auth::{AuthHandler, NoAuth},
     error::TransportError,
@@ -16,7 +18,6 @@ use crate::{
 };
 use dashmap::DashMap;
 use tokio::sync::{mpsc, oneshot, watch};
-use tokio::time::timeout;
 
 use cmd::ClientCmd;
 pub use config::WsClientConfig;
@@ -76,7 +77,7 @@ impl WsClient {
         });
 
         let bg = Arc::clone(&client);
-        tokio::spawn(async move { bg.connection_loop(cmd_rx).await });
+        spawn(async move { bg.connection_loop(cmd_rx).await });
 
         client
     }

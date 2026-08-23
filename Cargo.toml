@@ -12,7 +12,7 @@ repository = "https://github.com/pavvers1/notifiapp-transport"
 [features]
 default = ["ws", "crypto"]
 # WebSocket transport (primary, always recommended)
-ws = ["dep:tokio-tungstenite", "dep:futures-util"]
+ws = ["dep:tokio-tungstenite", "dep:futures-util", "dep:gloo-net"]
 # Noise XX encryption for WS (mandatory by default, can be disabled in pure-TLS setups)
 crypto = ["dep:snow"]
 # HTTP+JSON+SSE transport (optional debug/fallback)
@@ -23,7 +23,6 @@ http = ["dep:reqwest", "dep:serde_json", "dep:axum", "dep:tower-http", "dep:toki
 # ---------------------------------------------------------------------------
 [dependencies]
 # Async runtime
-tokio = { version = "1.53.1", features = ["sync", "macros", "time", "rt", "io-util"] }
 tokio-util = { version = "0.7.19", features = ["io"] }
 
 # Serialization
@@ -41,8 +40,8 @@ async-trait = "0.1.91"
 url = "2.5.8"
 
 # WS transport (feature = "ws")
-tokio-tungstenite = { version = "0.30.0", features = ["rustls-tls-native-roots"], optional = true }
-futures-util = { version = "0.3.33", optional = true }
+futures-util = { version = "0.3.33", features = ["sink"], optional = true }
+
 
 # Noise crypto (feature = "crypto")
 snow = { version = "0.10.0", optional = true }
@@ -53,3 +52,17 @@ serde_json = { version = "1.0.151", optional = true }
 axum = { version = "0.8.9", features = ["json", "ws"], optional = true }
 tower-http = { version = "0.7.0", features = ["cors"], optional = true }
 tokio-stream = { version = "0.1.19", features = ["sync"], optional = true }
+
+[target.'cfg(not(target_arch = "wasm32"))'.dependencies]
+tokio = { version = "1.53.1", features = ["sync", "macros", "time", "rt", "io-util"] }
+tokio-tungstenite = { version = "0.30.0", features = ["rustls-tls-native-roots"], optional = true }
+
+[target.'cfg(target_arch = "wasm32")'.dependencies]
+tokio = { version = "1.53.1", features = ["sync", "macros", "time"] }
+uuid = { version = "1.24.0", features = ["js"] }
+ring = { version = "0.17", features = ["wasm32_unknown_unknown_js"] }
+getrandom = { version = "0.3", features = ["wasm_js"] }
+gloo-net = { version = "0.7.0", features = ["websocket"], optional = true }
+wasm-bindgen-futures = "0.4.42"
+gloo-timers = { version = "0.3.0", features = ["futures"] }
+web-time = "1.1.0"

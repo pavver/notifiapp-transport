@@ -7,7 +7,8 @@ use crate::{
 
 use super::WsClient;
 
-#[async_trait]
+#[cfg_attr(target_arch = "wasm32", async_trait(?Send))]
+#[cfg_attr(not(target_arch = "wasm32"), async_trait)]
 impl Transport for WsClient {
     async fn request(
         &self,

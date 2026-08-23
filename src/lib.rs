@@ -112,10 +112,13 @@ pub use error::CryptoError;
 
 #[cfg(feature = "ws")]
 pub use ws::{
-    BackoffStrategy, ConstantBackoff, ExponentialBackoff, LinearBackoff, ServerSessionHandle,
-    WsClient, WsClientConfig, WsServerConfig, accept_ws_session,
+    BackoffStrategy, ConstantBackoff, ExponentialBackoff, LinearBackoff, WsClient, WsClientConfig,
 };
 
+#[cfg(all(feature = "ws", not(target_arch = "wasm32")))]
+pub use ws::{ServerSessionHandle, WsServerConfig, accept_ws_session};
+
+pub mod runtime;
 pub(crate) mod utils;
 
 #[cfg(feature = "http")]
