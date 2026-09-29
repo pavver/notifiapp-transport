@@ -41,4 +41,24 @@ impl WsServerConfig {
             buffer_size: 100,
         }
     }
+
+    pub fn new_plain(
+        protocol_name: impl Into<String>,
+        protocol_version: impl Into<String>,
+    ) -> Self {
+        let protocol_name = protocol_name.into();
+        let protocol_version = protocol_version.into();
+        crate::utils::validate_protocol_string(&protocol_name);
+        crate::utils::validate_protocol_string(&protocol_version);
+        Self {
+            protocol_name,
+            protocol_version,
+            #[cfg(feature = "crypto")]
+            noise_private_key: Vec::new(),
+            max_payload_bytes: 4 * 1024 * 1024,
+            heartbeat_interval: Duration::from_secs(30),
+            heartbeat_timeout: Duration::from_secs(10),
+            buffer_size: 100,
+        }
+    }
 }
